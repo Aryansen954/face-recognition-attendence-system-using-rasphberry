@@ -1,0 +1,186 @@
+# Import necessary libraries
+import face_recognition  # For face detection and recognition
+import cv2  # For handling camera input and image processing
+import numpy as np  # For array manipulation
+import time  # For handling time delays
+from datetime import date  # For getting the current date
+import requests # For HTTP requests (used to update ThingSpeak)
+import RPi.GPIO as GPIO  # For interacting with Raspberry Pi GPIO pins
+ # GPIO Setup for LCD and Buzzer
+GPIO.setmode(GPIO.BOARD)  # Use physical pin numbering
+GPIO.setwarnings(False)  # Disable GPIO warnings
+ 
+# Define GPIO pins connected to the LCD and Buzzer
+LCD_RS = 7
+LCD_E = 11
+LCD_D4 = 12
+LCD_D5 = 13
+LCD_D6 = 15
+LCD_D7 = 16
+Buzzer = 22  # GPIO pin for Buzzer
+ # Set up GPIO pins as output
+lcd_pins = [LCD_RS, LCD_E, LCD_D4, LCD_D5, LCD_D6, LCD_D7]
+for pin in lcd_pins:
+    GPIO.setup(pin, GPIO.OUT)  # Set LCD pins as output
+GPIO.setup(Buzzer, GPIO.OUT)  # Set buzzer pin as output
+ 
+# Constants for LCD
+LCD_WIDTH = 16  # Max characters per line for LCD
+LCD_CHR = True  # For sending data to LCD
+LCD_CMD = False  # For sending commands to LCD
+LCD_LINES = [0x80, 0xC0]  # Memory addresses for line 1 and line 2 on the LCD
+ 
+# Timing constants for LCD control
+E_PULSE = 0.0005  # Pulse time for LCD
+E_DELAY = 0.0005  # Delay time for LCD
+ 
+# ThingSpeak API Key (Replace with your own API key)
+THINGSPEAK_API_KEY = " XVH7KTVLYMMW9FOE " #   ThingSpeak API Key
+THINGSPEAK_URL = "https://api.thingspeak.com/update" # URL to update data on ThingSpeak
+ 
+# Load known face encodings from images of students
+known_faces = {
+    Akanksha Yadav": face recognition. face_encodings(face_recognition. load image file("akankshayadav.jpeg"))[0], "Ankita Singh": face recognition face encodings (face_recognition. load image file Ankita.jpeg"))[0], "Bhumika Chourasiya": face recognition. face encodings (face_recognition, load image file("bhumika.jpeg")}[9]. "Meha Madam": face_recognition. face encodings(face recognition. load image file("Meha mam.jpeg"))[0], "Sneha Dixit": face_recognition.face_encodings(face_recognition. load image_file("sneha.jpeg"))[0], "Golu Malviya": face recognition. face encodings(face_recognition. load image file("golu.jpeg"))[0]. face_recognition.face_encodings (face recognition. Load image file("deepesh.jpeg"))[8], "Deepesh Sujane": "Principal Sir": face recognition, face encodings(face_recognition.load_image file("principal sir.jpeg"))[0], "Raman Kumar": face recognition. face encodings (face recognition. load image filel "Raman Kusar. jpeg")][0], "Rubana Ali": face recognition, face encodings(face_recognition. Load image file("Rubana Ali.jpeg")) [0], "Shan: Patel": face recognition. face encodings (face recognition, load image file("Shani Patel.jpeg"))[0]. "Shubham Sen": face recognition.face_encodings(face_recognition, load_image file("Shubham Sen.jpeg"))[0], "Shubha Singh": face recognition. face encodings(face recognition. Load image file("Shubha Singgh.jpeg"))[6], "Vindhya Kewat": face recognition,face_encodings(face recognition. Load image filel "Vindhya Kewat. jpeg"))[0]. "HOD Sir": face recognition, face encodings(face_recognition.load image file("hod sir.jpeg"))[0]. "Shidharth sir": face recognition,face encodings(face_recognition. Load_image_file("Shidharth sir. jpeg")) [6], "Rahul Sir": face recognition. face encodings(face recognition. load_image_file("Rahul Sir.jpeg"))[8], "Sachin Sir": face recognition, face encodings (face recognition, load image filel "Sachin Sir. jpeg"))191, Deepti madam": face recognition, face encodings (face recognition, load image file("Deepti Mam”), "Raju Sir": face recognition. face encodings(face recognition. load_image_file("Raju Sir.jpeg"))[8], "Aryan Sen": face recognition, face encodings (face recognition, load image filel "aryan. jpeg"))191, “Muskan Ahirwar": face recognition, face encodings (face recognition, load image file("muskan”)
+}
+ 
+# Set up camera (using the default camera, which is usually the built-in webcam)
+camera = cv2.VideoCapture(0)
+ 
+# LCD Functions to initialize and control the display
+def lcd_init():
+    """
+    Initializes the LCD display with necessary commands for 16x2 display.
+    """
+    lcd_send_byte(0x33, LCD_CMD)  # 110011 Initialize LCD
+    lcd_send_byte(0x32, LCD_CMD)  # 110010 Initialize LCD
+    lcd_send_byte(0x06, LCD_CMD)  # Set cursor move direction
+    lcd_send_byte(0x0C, LCD_CMD)  # Turn cursor off
+    lcd_send_byte(0x28, LCD_CMD)  # Set to 2-line display
+    lcd_send_byte(0x01, LCD_CMD)  # Clear display
+    time.sleep(E_DELAY)
+ 
+def lcd_send_byte(bits, mode):
+    """
+    Sends a byte to the LCD (either a command or character).
+    """
+    GPIO.output(LCD_RS, mode)  # Select mode (command or data)
+ 
+    # Send high bits
+    GPIO.output(LCD_D4, bits & 0x10 == 0x10)
+    GPIO.output(LCD_D5, bits & 0x20 == 0x20)
+    GPIO.output(LCD_D6, bits & 0x40 == 0x40)
+    GPIO.output(LCD_D7, bits & 0x80 == 0x80)
+    lcd_toggle_enable()
+ 
+    # Send low bits
+    GPIO.output(LCD_D4, bits & 0x01 == 0x01)
+    GPIO.output(LCD_D5, bits & 0x02 == 0x02)
+    GPIO.output(LCD_D6, bits & 0x04 == 0x04)
+    GPIO.output(LCD_D7, bits & 0x08 == 0x08)
+    lcd_toggle_enable()
+ 
+def lcd_toggle_enable():
+    """
+    Toggles the enable pin to latch data into the LCD.
+    """
+    time.sleep(E_DELAY)
+    GPIO.output(LCD_E, True)
+    time.sleep(E_PULSE)
+    GPIO.output(LCD_E, False)
+    time.sleep(E_DELAY)
+ 
+def display_message_on_lcd(message, line):
+    """
+    Displays a message on the LCD, given the message and line number.
+    """
+    message = message.ljust(LCD_WIDTH, " ")  # Pad message to fit in the 16-character width
+    lcd_send_byte(LCD_LINES[line - 1], LCD_CMD)  # Select line
+    for char in message:
+        lcd_send_byte(ord(char), LCD_CHR)  # Send each character
+ 
+# Function to activate the buzzer (a simple tone)
+def buzz():
+    GPIO.output(Buzzer, GPIO.HIGH)  # Turn buzzer on
+    time.sleep(0.5)  # Wait for 0.5 seconds
+    GPIO.output(Buzzer, GPIO.LOW)  # Turn buzzer off
+ 
+# Function to mark attendance on ThingSpeak via API
+def mark_attendance(name, subject):
+    """
+    Sends the attendance data to ThingSpeak using the provided API key and subject.
+    """
+    try:
+        # Prepare the data to send to ThingSpeak
+        data = {
+            "api_key": THINGSPEAK_API_KEY,
+            "field1": name,  # Student's name
+            "field2": str(date.today()),  # Current date
+            "field3": subject  # Subject name
+        }
+ 
+        # Send the data to ThingSpeak via a POST request
+        response = requests.post(THINGSPEAK_URL, data=data)
+ 
+        # Check if the response is successful
+        if response.status_code == 200:
+            # Display "Welcome" on line 1 and the student's name on line 2
+            display_message_on_lcd("Welcome", 1)
+            display_message_on_lcd(name, 2)
+            buzz()  # Activate buzzer to indicate attendance is marked
+            print(f"Attendance marked for {name} on ThingSpeak.")
+        else:
+            print(f"Failed to mark attendance. Error: {response.status_code}, {response.text}")
+    except Exception as e:
+        print(f"Error while marking attendance: {e}")
+ 
+# Main function to start the system and detect faces
+def main():
+    # Initialize LCD display
+    lcd_init()
+ 
+    # Prompt user for the subject name
+    subject = input("Enter the subject name: ")
+      while True:
+        # Capture video frame
+        ret, frame = camera.read()
+        if not ret:
+            print("Failed to read frame from camera.")
+            break
+ 
+        # Convert frame from BGR (OpenCV default) to RGB (for face_recognition)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+ 
+        # Detect faces in the frame
+        face_locations = face_recognition.face_locations(rgb_frame)
+     if face_locations:
+            # Process detected faces
+print(f"Detected face locations: {face_locations}")
+            try:
+                # Get face encodings for each detected face
+                face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
+                for face_encoding in face_encodings:
+                    # Compare detected face with known faces
+                    matches = face_recognition.compare_faces(list(known_faces.values()), face_encoding)
+                    if True in matches:
+                        first_match_index = matches.index(True)  # Get index of the first match
+                        name = list(known_faces.keys())[first_match_index]  # Get the name of the matched student
+                        mark_attendance(name, subject)  # Mark attendance for this student
+                        time.sleep(3)  # Wait for 3 seconds before detecting another face
+            except Exception as e:
+                print(f"Error during face encoding: {e}"
+ else:
+            print("No faces detected.")
+      # Press 'q' to quit the loop
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+ 
+    # Cleanup resources after the loop ends
+    camera.release()  # Release camera
+    cv2.destroyAllWindows()  # Close OpenCV windows
+    GPIO.cleanup()  # Clean up GPIO resources
+ 
+# Ensure that the main function is called when the script is executed
+if __name__ == "__main__":
+lcd_init()
+    main()  
+
