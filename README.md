@@ -93,3 +93,5 @@ Specializing in Embedded Systems and IoT Solutions
 
 📝 License
 This project is open-source and free to use under the MIT License.
+
+![image](https://github.com/user-attachments/assets/40d9368f-5729-409c-8bcf-7ceb61929ea7)
